@@ -257,3 +257,160 @@ async function updateCameraStatus() {
 
 updateCameraStatus();
 setInterval(updateCameraStatus, 500);
+(() => {
+  const video = document.getElementById("browserCamera");
+  const canvas = document.getElementById("cameraCanvas");
+  const startBtn = document.getElementById("startCamera");
+  const stopBtn = document.getElementById("stopCamera");
+  const status = document.getElementById("cameraStatus");
+  const lapDisplay = document.getElementById("browserLapCount");
+  const lastLapDisplay = document.getElementById("browserLastLap");
+
+  if (!video || !canvas || !startBtn || !stopBtn) return;
+
+  const ctx = canvas.getContext("2d", {
+    willReadFrequently: true
+  });
+
+  let stream = null;
+  let running = false;
+  let previousFrame = null;
+  let lastLapTime = 0;
+  let lapCount = 0;
+  let lastMotionTime = 0;
+  let animationId = null;
+
+  const cooldownMs = 1500;
+  const motionThreshold = 0.12;
+
+  startBtn.addEventListener("click", startCamera);
+  stopBtn.addEventListener("click", stopCamera);
+
+  async function startCamera() {
+    if (running) return;
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      status.textContent =
+        "Camera is unavailable. Open this website using HTTPS.";
+      return;
+    }
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
+        audio: false
+      });
+
+      video.srcObject = stream;
+      await video.play();
+
+      running = true;
+      previousFrame = null;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      status.textContent = "Camera running. Detecting motion...";
+
+      detectMotion();
+    } catch (error) {
+      status.textContent =
+        "Cannot open camera: " + error.message +
+        ". Check browser camera permission.";
+    }
+  }
+
+  function stopCamera() {
+    running = false;
+
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+      animationId = null;
+    }
+
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      stream = null;
+    }
+
+    video.srcObject = null;
+    previousFrame = null;
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    status.textContent = "Camera is stopped";
+  }
+
+  function detectMotion() {
+    if (!running || video.readyState < 2) {
+      if (running) animationId = requestAnimationFrame(detectMotion);
+      return;
+    }
+
+    const width = 160;
+    const height = 60;
+
+    canvas.width = width;
+    canvas.height = height;
+
+    // Sample a narrow horizontal detection zone
+    // across the middle of the video.
+    const sourceX = video.videoWidth * 0.4;
+    const sourceY = video.videoHeight * 0.45;
+    const sourceWidth = video.videoWidth * 0.2;
+    const sourceHeight = video.videoHeight * 0.1;
+
+    ctx.drawImage(
+      video,
+      sourceX, sourceY, sourceWidth, sourceHeight,
+      0, 0, width, height
+    );
+
+    const pixels = ctx.getImageData(
+      0, 0, width, height
+    ).data;
+
+    const gray = new Uint8Array(width * height);
+
+    for (let i = 0, p = 0; i < pixels.length; i += 4, p++) {
+      gray[p] =
+        0.299 * pixels[i] +
+        0.587 * pixels[i + 1] +
+        0.114 * pixels[i + 2];
+    }
+
+    if (previousFrame) {
+      let changed = 0;
+
+      for (let i = 0; i < gray.length; i++) {
+        if (Math.abs(gray[i] - previousFrame[i]) > 35) {
+          changed++;
+        }
+      }
+
+      const motionRatio = changed / gray.length;
+      const now = performance.now();
+
+      if (motionRatio > motionThreshold) {
+        lastMotionTime = now;
+
+        if (now - lastLapTime > cooldownMs) {
+          lapCount++;
+          lastLapTime = now;
+
+          lapDisplay.textContent = lapCount;
+          lastLapDisplay.textContent =
+            new Date().toLocaleTimeString();
+          status.textContent =
+            "Motion detected — Lap " + lapCount;
+        }
+      } else if (now - lastMotionTime > 2000) {
+        status.textContent = "Camera running. Waiting for car...";
+      }
+    }
+
+    previousFrame = gray;
+    animationId = requestAnimationFrame(detectMotion);
+  }
+})();
