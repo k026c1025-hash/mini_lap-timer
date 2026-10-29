@@ -187,5 +187,27 @@
     </main>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <section id="browser-camera-panel">
+  <h2>Mini 4WD Camera</h2>
+
+  <video
+    id="browserCamera"
+    autoplay
+    muted
+    playsinline
+    style="width:100%;max-width:640px;background:#111;border-radius:12px">
+  </video>
+
+  <canvas id="cameraCanvas" hidden></canvas>
+
+  <div>
+    <button id="startCamera">Start Camera</button>
+    <button id="stopCamera" disabled>Stop Camera</button>
+  </div>
+
+  <p id="cameraStatus">Camera is stopped</p>
+  <h3>Lap Count: <span id="browserLapCount">0</span></h3>
+  <p>Last Lap: <span id="browserLastLap">--</span></p>
+</section>
 </body>
 </html>
